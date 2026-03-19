@@ -493,7 +493,17 @@ button:focus-visible {
   height: 100%;
   object-fit: cover;
   transform: scale(1.01);
-  transition: transform var(--dur-3) var(--ease);
+  opacity: 0.72;
+  filter: blur(10px);
+  transition:
+    transform var(--dur-3) var(--ease),
+    opacity var(--dur-3) var(--ease),
+    filter var(--dur-3) var(--ease);
+}
+
+.work-media img.is-loaded {
+  opacity: 1;
+  filter: none;
 }
 
 .work:hover .work-media img,
@@ -806,6 +816,24 @@ button:focus-visible {
   align-items: center;
   gap: var(--space-3);
   min-height: 0;
+}
+
+.lightbox-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 0.22em;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease);
+}
+
+.lightbox-stage.is-loading .lightbox-loading {
+  opacity: 1;
 }
 
 .lightbox-image {

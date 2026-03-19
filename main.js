@@ -66,6 +66,75 @@ const encodePath = (path) => {
   }
 };
 
+const IMAGE_PLACEHOLDER =
+  "data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%221200%22%20height=%22900%22%20viewBox=%220%200%201200%20900%22%3E%3Crect%20width=%221200%22%20height=%22900%22%20fill=%22%23121214%22/%3E%3Crect%20x=%2270%22%20y=%2270%22%20width=%221060%22%20height=%22760%22%20rx=%2248%22%20fill=%22none%22%20stroke=%22%23ffffff%22%20stroke-opacity=%220.10%22%20stroke-width=%223%22/%3E%3C/svg%3E";
+
+const createTaskQueue = (limit = 2) => {
+  let active = 0;
+  const pending = [];
+
+  const runNext = () => {
+    if (active >= limit) return;
+    const task = pending.shift();
+    if (!task) return;
+    active += 1;
+    Promise.resolve()
+      .then(task)
+      .catch(() => {})
+      .finally(() => {
+        active -= 1;
+        runNext();
+      });
+  };
+
+  return (task) => {
+    pending.push(task);
+    runNext();
+  };
+};
+
+const loadImgInto = async (imgEl, src) => {
+  const temp = new Image();
+  temp.decoding = "async";
+  temp.src = src;
+  try {
+    if (typeof temp.decode === "function") await temp.decode();
+  } catch {}
+  imgEl.src = src;
+  imgEl.classList.add("is-loaded");
+  imgEl.removeAttribute("data-src");
+};
+
+const setupLazyImages = (mount) => {
+  const imgs = Array.from(mount.querySelectorAll("img[data-src]")).filter((el) => el instanceof HTMLImageElement);
+  if (imgs.length === 0) return () => {};
+
+  const enqueue = createTaskQueue(2);
+  let stopped = false;
+
+  const requestLoad = (img) => {
+    const src = img.getAttribute("data-src");
+    if (!src) return;
+    if (!img.classList.contains("is-loading")) img.classList.add("is-loading");
+
+    enqueue(async () => {
+      if (stopped) return;
+      const current = img.getAttribute("data-src");
+      if (!current) return;
+      await loadImgInto(img, current);
+      img.classList.remove("is-loading");
+    });
+  };
+
+  imgs
+    .sort((a, b) => (a.getAttribute("data-priority") === "high" ? -1 : 1) - (b.getAttribute("data-priority") === "high" ? -1 : 1))
+    .forEach((img) => requestLoad(img));
+
+  return () => {
+    stopped = true;
+  };
+};
+
 const works = [
   {
     title: "针对于盲人的智能调味瓶设计",
@@ -198,10 +267,11 @@ const renderWork = ({ mount }) => {
               const cover = w.images[0] ? encodePath(w.images[0]) : "";
               const title = w.title.replaceAll('"', "&quot;");
               const tag = w.tag.replaceAll('"', "&quot;");
+              const priority = idx < 3 ? "high" : "low";
               return `
                 <article class="work" role="listitem" tabindex="0" aria-label="打开作品：${title}" data-index="${idx}">
                   <figure class="work-media" aria-hidden="true">
-                    <img alt="${title} 封面" loading="lazy" decoding="async" src="${cover}" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%221200%22%20height=%22900%22%20viewBox=%220%200%201200%20900%22%3E%3Crect%20width=%221200%22%20height=%22900%22%20fill=%22%23121214%22/%3E%3Crect%20x=%2270%22%20y=%2270%22%20width=%221060%22%20height=%22760%22%20rx=%2248%22%20fill=%22none%22%20stroke=%22%23ffffff%22%20stroke-opacity=%220.12%22%20stroke-width=%223%22/%3E%3Ctext%20x=%2260%22%20y=%22480%22%20fill=%22%23ffffff%22%20fill-opacity=%220.45%22%20font-family=%22Inter,Arial%22%20font-size=%2244%22%20letter-spacing=%226%22%3EIMAGE%20MISSING%3C/text%3E%3C/svg%3E';" />
+                    <img class="work-image" alt="${title} 封面" loading="lazy" decoding="async" src="${IMAGE_PLACEHOLDER}" data-src="${cover}" data-priority="${priority}" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%221200%22%20height=%22900%22%20viewBox=%220%200%201200%20900%22%3E%3Crect%20width=%221200%22%20height=%22900%22%20fill=%22%23121214%22/%3E%3Crect%20x=%2270%22%20y=%2270%22%20width=%221060%22%20height=%22760%22%20rx=%2248%22%20fill=%22none%22%20stroke=%22%23ffffff%22%20stroke-opacity=%220.12%22%20stroke-width=%223%22/%3E%3Ctext%20x=%2260%22%20y=%22480%22%20fill=%22%23ffffff%22%20fill-opacity=%220.45%22%20font-family=%22Inter,Arial%22%20font-size=%2244%22%20letter-spacing=%226%22%3EIMAGE%20MISSING%3C/text%3E%3C/svg%3E';" />
                   </figure>
                   <div class="work-overlay">
                     <p class="work-tag">${tag}</p>
@@ -238,6 +308,7 @@ const renderWork = ({ mount }) => {
         </div>
         <div class="lightbox-stage">
           <button class="lightbox-nav" type="button" data-lightbox-prev aria-label="上一张">←</button>
+          <p class="lightbox-loading" id="lightboxLoading" aria-live="polite" hidden>加载中…</p>
           <img class="lightbox-image" id="lightboxImage" alt="" />
           <button class="lightbox-nav" type="button" data-lightbox-next aria-label="下一张">→</button>
         </div>
@@ -258,10 +329,13 @@ const renderWork = ({ mount }) => {
   const prevBtn = lightbox.querySelector("[data-lightbox-prev]");
   const nextBtn = lightbox.querySelector("[data-lightbox-next]");
   const dialog = lightbox.querySelector(".lightbox-dialog");
+  const stage = lightbox.querySelector(".lightbox-stage");
+  const loadingEl = lightbox.querySelector("#lightboxLoading");
 
   let images = [];
   let index = 0;
   let lastFocused = null;
+  let stageToken = 0;
 
   const setStage = () => {
     const total = images.length;
@@ -269,17 +343,52 @@ const renderWork = ({ mount }) => {
     const safeIndex = ((index % total) + total) % total;
     index = safeIndex;
 
+    const token = (stageToken += 1);
+    const src = encodePath(images[index]);
+
+    if (stage) stage.classList.add("is-loading");
+    if (loadingEl) loadingEl.hidden = false;
+
     imgEl.onerror = () => {
       imgEl.onerror = null;
       imgEl.src =
         "data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%221200%22%20height=%22900%22%20viewBox=%220%200%201200%20900%22%3E%3Crect%20width=%221200%22%20height=%22900%22%20fill=%22%23121214%22/%3E%3Crect%20x=%2270%22%20y=%2270%22%20width=%221060%22%20height=%22760%22%20rx=%2248%22%20fill=%22none%22%20stroke=%22%23ffffff%22%20stroke-opacity=%220.12%22%20stroke-width=%223%22/%3E%3Ctext%20x=%2260%22%20y=%22480%22%20fill=%22%23ffffff%22%20fill-opacity=%220.45%22%20font-family=%22Inter,Arial%22%20font-size=%2244%22%20letter-spacing=%226%22%3EIMAGE%20MISSING%3C/text%3E%3C/svg%3E";
+      if (stage) stage.classList.remove("is-loading");
+      if (loadingEl) loadingEl.hidden = true;
     };
-    imgEl.src = encodePath(images[index]);
+
+    const temp = new Image();
+    temp.decoding = "async";
+    temp.src = src;
+    Promise.resolve()
+      .then(async () => {
+        try {
+          if (typeof temp.decode === "function") await temp.decode();
+        } catch {}
+        if (stageToken !== token) return;
+        imgEl.src = src;
+        if (stage) stage.classList.remove("is-loading");
+        if (loadingEl) loadingEl.hidden = true;
+      })
+      .catch(() => {
+        if (stageToken !== token) return;
+        imgEl.src = src;
+      });
     countEl.textContent = total > 1 ? `${index + 1} / ${total}` : "";
 
     const disableNav = total <= 1;
     if (prevBtn) prevBtn.disabled = disableNav;
     if (nextBtn) nextBtn.disabled = disableNav;
+
+    if (total > 1) {
+      const nextIndex = ((index + 1) % total + total) % total;
+      const prevIndex = ((index - 1) % total + total) % total;
+      [nextIndex, prevIndex].forEach((i) => {
+        const warm = new Image();
+        warm.decoding = "async";
+        warm.src = encodePath(images[i]);
+      });
+    }
   };
 
   const open = (work, startIndex = 0) => {
@@ -397,6 +506,7 @@ const renderWork = ({ mount }) => {
   mount.addEventListener("click", onClickWork);
   mount.addEventListener("keydown", onKeyOpen);
   document.addEventListener("keydown", onKeydown);
+  const cleanupLazy = setupLazyImages(mount);
 
   return () => {
     closeTargets.forEach((el) => el.removeEventListener("click", close));
@@ -405,6 +515,7 @@ const renderWork = ({ mount }) => {
     mount.removeEventListener("click", onClickWork);
     mount.removeEventListener("keydown", onKeyOpen);
     document.removeEventListener("keydown", onKeydown);
+    cleanupLazy();
     close();
   };
 };
