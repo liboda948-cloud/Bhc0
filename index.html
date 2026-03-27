@@ -19,19 +19,22 @@
   </head>
   <body>
     <a class="skip-link" href="#app">跳到主要内容</a>
+    <canvas class="bg-particles" id="bgParticles" aria-hidden="true"></canvas>
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand">
           <a class="logo" href="#/" aria-label="返回首页">BHC</a>
           <p class="tagline">诠释更好的。</p>
         </div>
-        <address class="topbar-contact" aria-label="联系方式">
-          <span class="contact-label">商务合作</span>
-          <a class="contact-link" href="tel:4009905823">400-990-5823</a>
-          <a class="contact-link" href="tel:075583500769">0755-83500769</a>
-          <span class="contact-label">Email</span>
-          <a class="contact-link" href="mailto:3341366511@qq.com">3341366511@qq.com</a>
-        </address>
+        <nav class="topbar-nav" aria-label="主导航">
+          <a class="topbar-link" href="#/">Home</a>
+          <a class="topbar-link" href="#/work">Work</a>
+          <a class="topbar-link" href="#/about">About</a>
+          <a class="topbar-link" href="#/contact">Contact</a>
+        </nav>
+        <button class="topbar-menu" type="button" aria-label="菜单">
+          <span class="menu-lines" aria-hidden="true"></span>
+        </button>
       </div>
     </header>
 
